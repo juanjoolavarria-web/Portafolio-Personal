@@ -33,6 +33,17 @@ def _coerce_fecha(serie: pd.Series) -> pd.Series:
     return pd.to_datetime(serie, errors="coerce")
 
 
+def _col(df: pd.DataFrame, *nombres: str) -> pd.Series:
+    """Devuelve la primera columna que exista entre `nombres`.
+    Permite que el Excel use encabezados nuevos ('Precio', 'Monto') o
+    los antiguos ('Precio USD', 'Monto USD'). Si no encuentra ninguna,
+    devuelve una columna de NaN del largo del DataFrame."""
+    for n in nombres:
+        if n in df.columns:
+            return df[n]
+    return pd.Series([pd.NA] * len(df), index=df.index)
+
+
 def load_workbook(source) -> dict[str, pd.DataFrame]:
     """
     Lee las tres hojas del Excel y devuelve un dict con DataFrames normalizados:
@@ -65,10 +76,10 @@ def _normalizar_compras(df: pd.DataFrame) -> pd.DataFrame:
     df["ticker"] = df["Ticker"].astype(str).str.strip()
     df["nombre"] = df["Nombre"].astype(str).str.strip()
     df["moneda_origen"] = df["Moneda"].astype(str).str.strip().str.upper()
-    df["acciones"] = pd.to_numeric(df["Acciones"], errors="coerce")
+    df["acciones"] = pd.to_numeric(_col(df, "Acciones"), errors="coerce")
     # Precio y monto: nativos en la moneda de `moneda_origen`.
-    df["precio_nativo"] = pd.to_numeric(df["Precio USD"], errors="coerce")
-    df["monto_nativo"] = pd.to_numeric(df["Monto USD"], errors="coerce")
+    df["precio_nativo"] = pd.to_numeric(_col(df, "Precio", "Precio USD"), errors="coerce")
+    df["monto_nativo"] = pd.to_numeric(_col(df, "Monto", "Monto USD"), errors="coerce")
     df["notas"] = df.get("Notas")
     df["tipo"] = "compra"
     return df[
@@ -85,11 +96,13 @@ def _normalizar_ventas(df: pd.DataFrame) -> pd.DataFrame:
     df["fecha"] = _coerce_fecha(df["Fecha"])
     df["ticker"] = df["Ticker"].astype(str).str.strip()
     df["nombre"] = df["Nombre"].astype(str).str.strip()
-    df["acciones"] = pd.to_numeric(df["Acciones Vendidas"], errors="coerce")
-    df["precio_nativo"] = pd.to_numeric(df["Precio USD"], errors="coerce")
-    df["monto_nativo"] = pd.to_numeric(df["Monto Recibido USD"], errors="coerce")
+    df["acciones"] = pd.to_numeric(_col(df, "Acciones Vendidas"), errors="coerce")
+    df["precio_nativo"] = pd.to_numeric(_col(df, "Precio", "Precio USD"), errors="coerce")
+    df["monto_nativo"] = pd.to_numeric(
+        _col(df, "Monto Recibido", "Monto Recibido USD"), errors="coerce"
+    )
     # En ventas la moneda no es columna propia: se infiere del "Tipo Orden".
-    tipo_orden = df.get("Tipo Orden").astype(str).str.strip().str.upper()
+    tipo_orden = _col(df, "Tipo Orden").astype(str).str.strip().str.upper()
     df["moneda_origen"] = tipo_orden.where(tipo_orden == "CLP", "USD")
     df["notas"] = df.get("Notas")
     df["tipo"] = "venta"
@@ -108,7 +121,7 @@ def _normalizar_dividendos(df: pd.DataFrame) -> pd.DataFrame:
     df["ticker"] = df["Ticker"].astype(str).str.strip()
     df["nombre"] = df["Nombre"].astype(str).str.strip()
     df["moneda_origen"] = df["Moneda"].astype(str).str.strip().str.upper()
-    df["monto_nativo"] = pd.to_numeric(df["Monto USD"], errors="coerce")
+    df["monto_nativo"] = pd.to_numeric(_col(df, "Monto", "Monto USD"), errors="coerce")
     df["notas"] = df.get("Notas")
     df["tipo"] = "dividendo"
     return df[
